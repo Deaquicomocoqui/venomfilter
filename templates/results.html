@@ -1,0 +1,450 @@
+{% extends "base.html" %}
+{% block title %}Analysis Results – VenomFilter{% endblock %}
+{% block content %}
+
+{# ── helpers ─────────────────────────────────────────────────────────────── #}
+{% macro badge(text, cls) %}
+  <span class="badge badge-{{ cls }}">{{ text }}</span>
+{% endmacro %}
+
+{% macro extlink(label, url) %}
+  <a class="ext-link" href="{{ url }}" target="_blank" rel="noopener">↗ {{ label }}</a>
+{% endmacro %}
+
+{# ── Risk Banner ──────────────────────────────────────────────────────────── #}
+<div class="score-banner {% if risk_score >= 70 %}score-critical{% elif risk_score >= 40 %}score-high{% elif risk_score >= 20 %}score-medium{% else %}score-low{% endif %}">
+  <div class="score-gauge">
+    <span class="score-number">{{ risk_score }}</span>
+    <span class="score-max">/100</span>
+  </div>
+  <div class="score-info">
+    <div class="score-verdict">
+      {% if risk_score >= 70 %}🚨 High-Probability Phishing
+      {% elif risk_score >= 40 %}⚠ Suspicious Email
+      {% elif risk_score >= 20 %}🔶 Low Risk — Review Recommended
+      {% else %}✅ Likely Clean
+      {% endif %}
+    </div>
+    <div class="score-sub">
+      {{ risk_flags | length }} flag(s) detected · Analyzed {{ timestamp[:4] }}-{{ timestamp[4:6] }}-{{ timestamp[6:8] }} at {{ timestamp[9:11] }}:{{ timestamp[11:13] }}
+      {% if body_only %}&nbsp;· Body-only mode{% endif %}
+    </div>
+  </div>
+  <a href="/" class="btn-back">← Analyze Another</a>
+</div>
+
+{# ── Mode banners ─────────────────────────────────────────────────────────── #}
+{% if email_lookup %}
+<div class="body-only-banner">
+  🔍 Email address lookup mode — showing domain intelligence for <strong>{{ email_data.from }}</strong>. Paste full raw email for complete phishing analysis.
+</div>
+{% elif body_only %}
+<div class="body-only-banner">
+  ℹ No email headers detected — running URL analysis on body content only. Paste full raw email for header auth &amp; sender intel checks.
+</div>
+{% endif %}
+
+{# ── Quick checks row ─────────────────────────────────────────────────────── #}
+{% if not body_only %}
+{% set spf_ok = 'v=spf1' in (headers.spf or '') %}
+{% set dmarc_ok = 'v=DMARC1' in (headers.dmarc or '') %}
+{% set dkim_ok = headers.dkim_present %}
+{% set reply_ok = not headers.reply_to_mismatch %}
+<div class="checks-row">
+  <div class="check-pill">
+    <div class="check-pill-label">SPF</div>
+    <div class="check-pill-val {% if spf_ok %}pill-pass{% elif 'Error' in (headers.spf or '') %}pill-warn{% else %}pill-fail{% endif %}">
+      {% if spf_ok %}✓ Pass{% elif 'Error' in (headers.spf or '') %}? Error{% else %}✗ Fail{% endif %}
+    </div>
+  </div>
+  <div class="check-pill">
+    <div class="check-pill-label">DMARC</div>
+    <div class="check-pill-val {% if dmarc_ok %}pill-pass{% elif 'Error' in (headers.dmarc or '') %}pill-warn{% else %}pill-fail{% endif %}">
+      {% if dmarc_ok %}✓ Pass{% elif 'Error' in (headers.dmarc or '') %}? Error{% else %}✗ Fail{% endif %}
+    </div>
+  </div>
+  <div class="check-pill">
+    <div class="check-pill-label">DKIM</div>
+    <div class="check-pill-val {% if dkim_ok %}pill-pass{% else %}pill-fail{% endif %}">
+      {% if dkim_ok %}✓ Present{% else %}✗ Missing{% endif %}
+    </div>
+  </div>
+  <div class="check-pill">
+    <div class="check-pill-label">Reply-To</div>
+    <div class="check-pill-val {% if reply_ok %}pill-pass{% else %}pill-fail{% endif %}">
+      {% if reply_ok %}✓ Matches{% else %}✗ Mismatch{% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ── Risk Flags ───────────────────────────────────────────────────────────── #}
+{% if risk_flags %}
+<div class="card">
+  <div class="section-title">Risk Flags</div>
+  {% for flag in risk_flags %}
+  <div class="flag flag-{{ flag.level }}">
+    <div class="flag-dot"></div>
+    <span>{{ flag.msg }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ── Email Metadata + Header Auth (2-col) ─────────────────────────────────── #}
+{% if not body_only %}
+<div class="grid-2">
+
+  <!-- Email Metadata -->
+  <div class="card" style="margin-bottom:0">
+    <div class="section-title">Email Metadata</div>
+    <div class="data-grid" style="grid-template-columns:1fr">
+
+      <div class="data-item">
+        <span class="data-key">From</span>
+        <span class="data-val">{{ email_data.from or '—' }}</span>
+      </div>
+
+      {% if email_data.reply_to %}
+      <div class="data-item">
+        <span class="data-key">Reply-To</span>
+        <span class="data-val {% if headers.reply_to_mismatch %}text-red{% endif %}">
+          {{ email_data.reply_to }}
+          {% if headers.reply_to_mismatch %}{{ badge('Mismatch', 'fail') }}{% endif %}
+        </span>
+      </div>
+      {% endif %}
+
+      <div class="data-item">
+        <span class="data-key">Subject</span>
+        <span class="data-val">{{ email_data.subject or '—' }}</span>
+      </div>
+
+      <div class="data-item">
+        <span class="data-key">Date</span>
+        <span class="data-val">{{ email_data.date or '—' }}</span>
+      </div>
+
+      <div class="data-item">
+        <span class="data-key">Sender IP</span>
+        <span class="data-val mono">
+          {{ email_data.sender_ip or '—' }}
+          {% if email_data.sender_ip %}
+          <button class="copy-btn" onclick="copyText('{{ email_data.sender_ip }}', this)">Copy</button>
+          {% if ext_links.vt_ip %}{{ extlink('VT', ext_links.vt_ip) }}{% endif %}
+          {% if ext_links.shodan %}{{ extlink('Shodan', ext_links.shodan) }}{% endif %}
+          {% if ext_links.abuseipdb %}{{ extlink('AbuseIPDB', ext_links.abuseipdb) }}{% endif %}
+          {% endif %}
+        </span>
+      </div>
+
+      <div class="data-item">
+        <span class="data-key">Message-ID</span>
+        <span class="data-val mono" style="font-size:0.72rem">{{ email_data.message_id or '—' }}</span>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Header Authentication -->
+  <div class="card" style="margin-bottom:0">
+    <div class="section-title">Header Authentication</div>
+    <div class="data-grid" style="grid-template-columns:1fr">
+
+      <div class="data-item">
+        <span class="data-key">SPF Record</span>
+        <span class="data-val" style="font-size:0.76rem">
+          {% if 'v=spf1' in (headers.spf or '') %}
+            {{ badge('Pass', 'pass') }}
+          {% elif 'No SPF' in (headers.spf or '') %}
+            {{ badge('No Record', 'fail') }}
+          {% elif 'Error' in (headers.spf or '') %}
+            {{ badge('Error', 'warn') }}
+          {% else %}
+            {{ badge('N/A', 'unknown') }}
+          {% endif %}
+          <span class="mono" style="font-size:0.7rem;color:var(--text2)">{{ (headers.spf or '')[:60] }}{% if (headers.spf or '') | length > 60 %}…{% endif %}</span>
+          {% if ext_links.mxtoolbox %}{{ extlink('MXToolbox', ext_links.mxtoolbox) }}{% endif %}
+        </span>
+      </div>
+
+      <div class="data-item">
+        <span class="data-key">DMARC Record</span>
+        <span class="data-val" style="font-size:0.76rem">
+          {% if 'v=DMARC1' in (headers.dmarc or '') %}
+            {{ badge('Pass', 'pass') }}
+          {% elif 'No DMARC' in (headers.dmarc or '') %}
+            {{ badge('No Record', 'fail') }}
+          {% elif 'Error' in (headers.dmarc or '') %}
+            {{ badge('Error', 'warn') }}
+          {% else %}
+            {{ badge('N/A', 'unknown') }}
+          {% endif %}
+          <span class="mono" style="font-size:0.7rem;color:var(--text2)">{{ (headers.dmarc or '')[:60] }}{% if (headers.dmarc or '') | length > 60 %}…{% endif %}</span>
+        </span>
+      </div>
+
+      <div class="data-item">
+        <span class="data-key">DKIM Signature</span>
+        <span class="data-val">
+          {% if headers.dkim_present %}
+            {{ badge('Present', 'pass') }}
+          {% else %}
+            {{ badge('Missing', 'fail') }}
+          {% endif %}
+        </span>
+      </div>
+
+      <div class="data-item">
+        <span class="data-key">Reply-To Domain</span>
+        <span class="data-val">
+          {% if headers.reply_to_mismatch %}
+            {{ badge('Mismatch', 'fail') }}
+            <span style="color:var(--text2);font-size:0.78rem">Reply-To ≠ From domain</span>
+          {% elif email_data.reply_to %}
+            {{ badge('Match', 'pass') }}
+          {% else %}
+            {{ badge('Not Set', 'unknown') }}
+          {% endif %}
+        </span>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+{% endif %}
+
+{# ── Sender Intelligence ──────────────────────────────────────────────────── #}
+{% if not body_only %}
+<div class="card">
+  <div class="section-title">Sender Intelligence</div>
+  <div class="data-grid">
+
+    <div class="data-item">
+      <span class="data-key">Country / City</span>
+      <span class="data-val">
+        {{ sender_info.ip_geolocation.country or '—' }}
+        {% if sender_info.ip_geolocation.city %}, {{ sender_info.ip_geolocation.city }}{% endif %}
+      </span>
+    </div>
+
+    <div class="data-item">
+      <span class="data-key">ISP / Org</span>
+      <span class="data-val">{{ sender_info.ip_geolocation.isp or '—' }}</span>
+    </div>
+
+    <div class="data-item">
+      <span class="data-key">AbuseIPDB Score</span>
+      <span class="data-val">
+        {% set ascore = sender_info.abuseipdb.abuseConfidenceScore or 0 %}
+        {% if ascore | int > 50 %}{{ badge(ascore ~ '%', 'malicious') }}
+        {% elif ascore | int > 0 %}{{ badge(ascore ~ '%', 'warn') }}
+        {% else %}{{ badge('0% — Clean', 'clean') }}
+        {% endif %}
+        {% if ext_links.abuseipdb %}{{ extlink('Full Report', ext_links.abuseipdb) }}{% endif %}
+      </span>
+    </div>
+
+    <div class="data-item">
+      <span class="data-key">Domain Age</span>
+      <span class="data-val">
+        {% set dage = sender_info.domain_age_flag or '' %}
+        {% if 'HIGH RISK' in dage %}{{ badge('High Risk', 'fail') }}
+        {% elif 'MEDIUM RISK' in dage %}{{ badge('Medium Risk', 'warn') }}
+        {% elif 'OK' in dage %}{{ badge('OK', 'pass') }}
+        {% else %}{{ badge('Unknown', 'unknown') }}
+        {% endif %}
+        <span style="color:var(--text2);font-size:0.78rem">{{ dage }}</span>
+      </span>
+    </div>
+
+    <div class="data-item">
+      <span class="data-key">Registrar</span>
+      <span class="data-val">
+        {{ sender_info.whois.registrar or '—' }}
+        {% if ext_links.whois %}{{ extlink('WHOIS', ext_links.whois) }}{% endif %}
+      </span>
+    </div>
+
+    <div class="data-item">
+      <span class="data-key">Registration Date</span>
+      <span class="data-val">{{ sender_info.whois.creation_date or '—' }}</span>
+    </div>
+
+    <div class="data-item">
+      <span class="data-key">Shodan Ports</span>
+      <span class="data-val mono">
+        {{ sender_info.shodan.open_ports or '—' }}
+        {% if ext_links.shodan %}{{ extlink('Shodan', ext_links.shodan) }}{% endif %}
+      </span>
+    </div>
+
+    <div class="data-item">
+      <span class="data-key">Known Vulns</span>
+      <span class="data-val">
+        {% set vulns = sender_info.shodan.vulns or 'None' %}
+        {% if vulns != 'None' and vulns != 'N/A' %}{{ badge(vulns, 'fail') }}
+        {% else %}<span class="text-muted">None detected</span>
+        {% endif %}
+      </span>
+    </div>
+
+    <div class="data-item">
+      <span class="data-key">VirusTotal IP</span>
+      <span class="data-val">
+        {% set vt_ip = sender_info.virustotal_ip or '' %}
+        {% if 'MALICIOUS' in vt_ip %}{{ badge('Malicious', 'malicious') }}
+        {% elif 'CLEAN' in vt_ip %}{{ badge('Clean', 'clean') }}
+        {% else %}{{ badge('N/A', 'unknown') }}
+        {% endif %}
+        {% if ext_links.vt_ip %}{{ extlink('VT', ext_links.vt_ip) }}{% endif %}
+      </span>
+    </div>
+
+    <div class="data-item">
+      <span class="data-key">VirusTotal Domain</span>
+      <span class="data-val">
+        {% set vt_dom = sender_info.virustotal_domain or '' %}
+        {% if 'MALICIOUS' in vt_dom %}{{ badge('Malicious', 'malicious') }}
+        {% elif 'CLEAN' in vt_dom %}{{ badge('Clean', 'clean') }}
+        {% else %}{{ badge('N/A', 'unknown') }}
+        {% endif %}
+        {% if ext_links.vt_domain %}{{ extlink('VT', ext_links.vt_domain) }}{% endif %}
+      </span>
+    </div>
+
+  </div>
+</div>
+{% endif %}
+
+{# ── URL Analysis ─────────────────────────────────────────────────────────── #}
+<div class="card">
+  <div class="section-title">URL Analysis</div>
+  {% set has_urls = namespace(found=false) %}
+  {% for url in urls %}
+    {% if not url.info %}{% set has_urls.found = true %}{% endif %}
+  {% endfor %}
+
+  {% if not has_urls.found %}
+    <p class="text-muted">No URLs detected in email content.</p>
+  {% else %}
+    {% for url in urls %}
+    {% if not url.info %}
+    {% set vt = url.virustotal %}
+    {% set vt_verdict = vt.verdict if vt is mapping else '' %}
+    <div class="entity-block">
+      <div class="entity-header">
+        <span class="entity-title">{{ url.url }}</span>
+        <div class="entity-badges">
+          {% if 'MALICIOUS' in vt_verdict %}{{ badge('Malicious', 'malicious') }}
+          {% elif 'CLEAN' in vt_verdict %}{{ badge('Clean', 'clean') }}
+          {% elif vt_verdict %}{{ badge(vt_verdict, 'warn') }}
+          {% else %}{{ badge('Unscanned', 'unknown') }}
+          {% endif %}
+          {% if url.shortened %}{{ badge('Shortened URL', 'warn') }}{% endif %}
+          <button class="copy-btn" onclick="copyText('{{ url.url }}', this)">Copy</button>
+          {% if url.vt_link %}{{ extlink('VirusTotal', url.vt_link) }}{% endif %}
+        </div>
+      </div>
+      <div class="data-grid">
+        <div class="data-item">
+          <span class="data-key">VT Detection</span>
+          <span class="data-val">
+            {% if vt is mapping %}
+              {% if vt.detection_ratio %}{{ vt.detection_ratio }} engines{% endif %}
+            {% else %}{{ vt or '—' }}{% endif %}
+          </span>
+        </div>
+        <div class="data-item">
+          <span class="data-key">Suspicious Keywords</span>
+          <span class="data-val">
+            {% set kw = url.suspicious_keywords or '' %}
+            {% if 'SUSPICIOUS' in kw %}
+              {{ badge('Flagged', 'warn') }}
+              <span style="color:var(--text2);font-size:0.76rem">{{ kw.replace('SUSPICIOUS - Keywords found: ','') }}</span>
+            {% else %}
+              <span class="text-muted">None</span>
+            {% endif %}
+          </span>
+        </div>
+        {% set scan = url.urlscan %}
+        {% if scan is mapping and scan.result_url %}
+        <div class="data-item">
+          <span class="data-key">URLScan.io</span>
+          <span class="data-val">
+            {{ badge('Submitted', 'info') }}
+            {{ extlink('View Result', scan.result_url) }}
+          </span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+  {% endif %}
+</div>
+
+{# ── Attachments ──────────────────────────────────────────────────────────── #}
+<div class="card">
+  <div class="section-title">Attachments</div>
+  {% set has_att = namespace(found=false) %}
+  {% for att in attachments %}{% if not att.info %}{% set has_att.found = true %}{% endif %}{% endfor %}
+
+  {% if not has_att.found %}
+    <p class="text-muted">
+      {% for att in attachments %}{% if att.info %}{{ att.info }}{% endif %}{% endfor %}
+    </p>
+  {% else %}
+    {% for att in attachments %}
+    {% if not att.info %}
+    {% set vt_att = att.virustotal %}
+    {% set vt_att_verdict = vt_att.verdict if vt_att is mapping else '' %}
+    <div class="entity-block">
+      <div class="entity-header">
+        <span class="entity-title">📄 {{ att.filename }}</span>
+        <div class="entity-badges">
+          {% if 'HIGH RISK' in (att.extension_flag or '') %}{{ badge('High Risk', 'fail') }}
+          {% elif 'MEDIUM RISK' in (att.extension_flag or '') %}{{ badge('Medium Risk', 'warn') }}
+          {% else %}{{ badge('Low Risk', 'pass') }}{% endif %}
+          {% if 'MALICIOUS' in vt_att_verdict %}{{ badge('VT Malicious', 'malicious') }}
+          {% elif 'CLEAN' in vt_att_verdict %}{{ badge('VT Clean', 'clean') }}{% endif %}
+          {% if att.vt_link %}{{ extlink('VirusTotal', att.vt_link) }}{% endif %}
+          {% if att.mb_link %}{{ extlink('MalwareBazaar', att.mb_link) }}{% endif %}
+        </div>
+      </div>
+      <div class="data-grid">
+        <div class="data-item">
+          <span class="data-key">Size</span>
+          <span class="data-val">{{ att.size_bytes | filesizeformat if att.size_bytes else att.size_bytes ~ ' bytes' }}</span>
+        </div>
+        <div class="data-item">
+          <span class="data-key">Extension Risk</span>
+          <span class="data-val">{{ att.extension_flag or '—' }}</span>
+        </div>
+        <div class="data-item" style="grid-column:1/-1">
+          <span class="data-key">SHA-256</span>
+          <span class="data-val mono">
+            {{ att.sha256 or '—' }}
+            {% if att.sha256 %}<button class="copy-btn" onclick="copyText('{{ att.sha256 }}', this)">Copy</button>{% endif %}
+          </span>
+        </div>
+        {% if att.malwarebazaar %}
+        <div class="data-item">
+          <span class="data-key">MalwareBazaar</span>
+          <span class="data-val">
+            {% if 'FOUND' in (att.malwarebazaar or '') %}{{ badge('Found', 'malicious') }}
+            {% elif 'Not found' in (att.malwarebazaar or '') %}{{ badge('Not Found', 'clean') }}
+            {% else %}{{ badge('Unknown', 'unknown') }}{% endif %}
+            <span style="color:var(--text2);font-size:0.76rem">{{ att.malwarebazaar }}</span>
+          </span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+  {% endif %}
+</div>
+
+{% endblock %}

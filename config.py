@@ -1,0 +1,4 @@
+VIRUSTOTAL_API_KEY = "your_key_here"
+ABUSEIPDB_API_KEY  = "your_key_here"
+SHODAN_API_KEY     = "your_key_here"
+URLSCAN_API_KEY    = "your_key_here"

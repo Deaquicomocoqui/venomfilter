@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+.env/
+.venv/
+
+# Secrets — NEVER commit real API keys
+.env
+*.env
+config_local.py
+
+# Flask
+instance/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+__MACOSX/
+Thumbs.db
+
+# Uploads / temp files
+uploads/
+*.eml
+*.tmp
+
+# Reports output
+reports/*.txt
+reports/*.html
+reports/*.json
+
+# Logs
+*.log

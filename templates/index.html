@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}VenomFilter – Email Threat Analyzer{% endblock %}
+{% block content %}
+
+<div class="hero">
+  <h1>Email Threat Analyzer</h1>
+  <p class="hero-sub">Paste an email body or full raw email to detect phishing, spoofing, and malicious content across multiple threat intelligence sources.</p>
+</div>
+
+{% if error %}
+<div class="alert alert-danger">⚠ {{ error }}</div>
+{% endif %}
+
+<div class="card">
+  <form id="analyzeForm" method="POST" action="/analyze" enctype="multipart/form-data">
+
+    <div class="tabs">
+      <button type="button" class="tab active" onclick="switchTab('paste', this)">📋 Paste Email</button>
+      <button type="button" class="tab" onclick="switchTab('upload', this)">📁 Upload .eml File</button>
+    </div>
+
+    <!-- Paste Tab -->
+    <div class="tab-content active" id="tab-paste">
+      <label class="field-label">Email body or full raw email (with or without headers)</label>
+      <textarea name="raw_email" placeholder="Paste any of the following:
+
+  • A sender email address   →  wanderson@rcn.com
+  • Just the email body      →  URLs and content are scanned
+  • Full raw email           →  Complete header + sender + URL analysis
+
+VenomFilter auto-detects the input and runs the right checks."></textarea>
+    </div>
+
+    <!-- Upload Tab -->
+    <div class="tab-content" id="tab-upload">
+      <label class="field-label">Upload a .eml file (max 5 MB)</label>
+      <div class="upload-box" onclick="document.getElementById('eml_file').click()">
+        <span class="upload-icon">📂</span>
+        <strong id="upload-label">Click to browse</strong> or drag & drop your .eml file here
+        <input type="file" id="eml_file" name="eml_file" accept=".eml" style="display:none"
+               onchange="document.getElementById('upload-label').textContent = this.files[0]?.name || 'Click to browse'">
+      </div>
+    </div>
+
+    <button type="submit" class="btn-analyze">Analyze Email</button>
+  </form>
+</div>
+
+<!-- Feature cards -->
+<div class="features-grid">
+  <div class="feature-card">
+    <span class="feature-icon">🔐</span>
+    <strong>Header Auth</strong>
+    SPF · DKIM · DMARC<br>Reply-To mismatch
+  </div>
+  <div class="feature-card">
+    <span class="feature-icon">🌐</span>
+    <strong>Sender Intel</strong>
+    IP geolocation · WHOIS<br>AbuseIPDB · Shodan
+  </div>
+  <div class="feature-card">
+    <span class="feature-icon">🔗</span>
+    <strong>URL Analysis</strong>
+    VirusTotal · URLScan.io<br>Shortened links · Keywords
+  </div>
+  <div class="feature-card">
+    <span class="feature-icon">📎</span>
+    <strong>Attachments</strong>
+    SHA-256 · VirusTotal<br>MalwareBazaar
+  </div>
+</div>
+
+{% endblock %}
